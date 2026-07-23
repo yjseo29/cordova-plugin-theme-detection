@@ -20,8 +20,8 @@ public class ThemeDetection extends CordovaPlugin {
   private CallbackContext themeChangeCallback = null;
   private int lastNightMode = Configuration.UI_MODE_NIGHT_UNDEFINED;
 
-  // Android 9 (API 28) is needed for dark theme availability
-  private static final int MINIMUM_VERSION = 28;
+  // System-wide dark theme is officially available since Android 10 (API 29)
+  private static final int MINIMUM_VERSION = 29;
 
   @Override
   public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
@@ -43,7 +43,7 @@ public class ThemeDetection extends CordovaPlugin {
       int systemVersion = Build.VERSION.SDK_INT;
       boolean available = systemVersion >= MINIMUM_VERSION;
 
-      String responseMessage = "Dark mode detection is not available. You need at least Android 9 (API 28), but you have installed API " + systemVersion;
+      String responseMessage = "Dark mode detection is not available. You need at least Android 10 (API 29), but you have installed API " + systemVersion;
       if(available) {
           responseMessage = "Dark mode detection is available";
       }

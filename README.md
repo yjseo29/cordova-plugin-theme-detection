@@ -14,7 +14,7 @@ If you like this plugin feel free to by me a beer :beers:. So I can maintain thi
 This plugin detects whether the dark mode is enabled on the device or not.
 
 iOS 13+ must be installed on your device, to use this plugin.
-For Android you can use it since Android 9 (Pie). The Browser platform requires `window.matchMedia()` support.
+For Android you can use it since Android 10 (API 29). The Browser platform requires `window.matchMedia()` support.
 
 ## Installation
 
@@ -91,7 +91,7 @@ export class HomePage {
 
 `cordova.plugins.ThemeDetection.isAvailable()`
 
-Checks whether the device is running on iOS 13 or Android 9 or newer and returns an object with a boolean value and a message.
+Checks whether the device is running on iOS 13 or Android 10 (API 29) or newer and returns an object with a boolean value and a message.
 
 #### isDarkModeEnabled
 
