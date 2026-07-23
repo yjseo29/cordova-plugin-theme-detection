@@ -1,15 +1,10 @@
 package de.mariusbackes.cordova.plugin;
 
-import android.content.Intent;
-import android.os.Bundle;
-import android.os.Build;
-import android.os.Handler;
 import android.content.res.Configuration;
-import org.apache.cordova.CordovaPlugin;
+import android.os.Build;
 import org.apache.cordova.CallbackContext;
+import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.PluginResult;
-import org.apache.cordova.CordovaInterface;
-import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult.Status;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -18,9 +13,12 @@ import org.json.JSONObject;
 public class ThemeDetection extends CordovaPlugin {
   public enum Action {
     isAvailable,
-    isDarkModeEnabled
+    isDarkModeEnabled,
+    subscribeThemeChanges
   }
-  private CallbackContext callback = null;
+
+  private CallbackContext themeChangeCallback = null;
+  private int lastNightMode = Configuration.UI_MODE_NIGHT_UNDEFINED;
 
   // Android 9 (API 28) is needed for dark theme availability
   private static final int MINIMUM_VERSION = 28;
@@ -34,12 +32,13 @@ public class ThemeDetection extends CordovaPlugin {
           result = isAvailable(callbackContext); break;
       case isDarkModeEnabled:
           result = isDarkModeEnabled(callbackContext); break;
+      case subscribeThemeChanges:
+          result = subscribeThemeChanges(callbackContext); break;
     }
     return result;
   }
 
   private boolean isAvailable(CallbackContext callbackContext) {
-    callback = callbackContext;
     try {
       int systemVersion = Build.VERSION.SDK_INT;
       boolean available = systemVersion >= MINIMUM_VERSION;
@@ -50,20 +49,20 @@ public class ThemeDetection extends CordovaPlugin {
       }
 
       JSONObject obj = createReturnObject(available, responseMessage);
-      returnCordovaPluginResult(PluginResult.Status.OK, obj, false);
+      returnCordovaPluginResult(callbackContext, PluginResult.Status.OK, obj, false);
     } catch (Exception e) {
         JSONObject obj = createReturnObject(false, e.getMessage());
-        returnCordovaPluginResult(PluginResult.Status.ERROR, obj, true);
+        returnCordovaPluginResult(callbackContext, PluginResult.Status.ERROR, obj, false);
         return false;
     }
     return true;
   }
 
   private boolean isDarkModeEnabled(CallbackContext callbackContext) {
-    callback = callbackContext;
     try {
-      int uiMode = this.cordova.getActivity().getResources().getConfiguration().uiMode 
-                    & Configuration.UI_MODE_NIGHT_MASK;
+      int uiMode = getNightMode(
+          this.cordova.getActivity().getResources().getConfiguration()
+      );
       boolean enabled = uiMode == Configuration.UI_MODE_NIGHT_YES;
 
       String responseMessage = "Dark mode is not enabled";
@@ -72,13 +71,90 @@ public class ThemeDetection extends CordovaPlugin {
       }
 
       JSONObject obj = createReturnObject(enabled, responseMessage);
-      returnCordovaPluginResult(PluginResult.Status.OK, obj, false);
+      returnCordovaPluginResult(callbackContext, PluginResult.Status.OK, obj, false);
     } catch (Exception e) {
         JSONObject obj = createReturnObject(false, e.getMessage());
-        returnCordovaPluginResult(PluginResult.Status.ERROR, obj, true);
+        returnCordovaPluginResult(callbackContext, PluginResult.Status.ERROR, obj, false);
         return false;
     }
     return true;
+  }
+
+  private boolean subscribeThemeChanges(CallbackContext callbackContext) {
+    themeChangeCallback = callbackContext;
+    lastNightMode = getNightMode(
+        this.cordova.getActivity().getResources().getConfiguration()
+    );
+
+    PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
+    result.setKeepCallback(true);
+    callbackContext.sendPluginResult(result);
+    return true;
+  }
+
+  @Override
+  public void onConfigurationChanged(Configuration newConfig) {
+    super.onConfigurationChanged(newConfig);
+    notifyIfThemeChanged(newConfig);
+  }
+
+  @Override
+  public void onResume(boolean multitasking) {
+    super.onResume(multitasking);
+    notifyIfThemeChanged(
+        this.cordova.getActivity().getResources().getConfiguration()
+    );
+  }
+
+  @Override
+  public void onReset() {
+    themeChangeCallback = null;
+    super.onReset();
+  }
+
+  @Override
+  public void onDestroy() {
+    themeChangeCallback = null;
+    super.onDestroy();
+  }
+
+  private int getNightMode(Configuration configuration) {
+    return configuration.uiMode & Configuration.UI_MODE_NIGHT_MASK;
+  }
+
+  private void notifyIfThemeChanged(Configuration configuration) {
+    if (themeChangeCallback == null) {
+      return;
+    }
+
+    int nightMode = getNightMode(configuration);
+    if (nightMode == lastNightMode) {
+      return;
+    }
+
+    lastNightMode = nightMode;
+    boolean enabled = nightMode == Configuration.UI_MODE_NIGHT_YES;
+
+    try {
+      JSONObject obj = new JSONObject();
+      obj.put("theme", enabled ? "dark" : "light");
+      obj.put("isDarkModeEnabled", enabled);
+
+      returnCordovaPluginResult(
+          themeChangeCallback,
+          PluginResult.Status.OK,
+          obj,
+          true
+      );
+    } catch (JSONException e) {
+      JSONObject obj = createReturnObject(false, e.getMessage());
+      returnCordovaPluginResult(
+          themeChangeCallback,
+          PluginResult.Status.ERROR,
+          obj,
+          true
+      );
+    }
   }
 
   // creates a return object with all needed information
@@ -94,12 +170,15 @@ public class ThemeDetection extends CordovaPlugin {
     return null;
   }
 
-// returns the plugin result to javascript interface
-  private void returnCordovaPluginResult(Status status, JSONObject obj, boolean setKeepCallback) {
+  // returns the plugin result to javascript interface
+  private void returnCordovaPluginResult(
+      CallbackContext callbackContext,
+      Status status,
+      JSONObject obj,
+      boolean keepCallback
+  ) {
     PluginResult result = new PluginResult(status, obj);
-    if(!setKeepCallback) {
-        result.setKeepCallback(false);
-    }
-    callback.sendPluginResult(result);
+    result.setKeepCallback(keepCallback);
+    callbackContext.sendPluginResult(result);
   }
 }

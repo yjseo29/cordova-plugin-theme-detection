@@ -99,6 +99,61 @@ Checks whether the device is running on iOS 13 or Android 9 or newer and returns
 
 Checks whether the dark mode is enabled on device and returns an object with a boolean value and a message.
 
+### Theme change event (Android)
+
+On Android, the plugin fires a document event whenever the active theme changes
+between light and dark. The native listener is started automatically when Cordova
+is ready, so no additional subscription method needs to be called.
+
+The event name is available as
+`cordova.plugins.ThemeDetection.THEME_CHANGE_EVENT` and currently resolves to
+`cordova-plugin-theme-detection:change`.
+
+When the literal event name is used, the listener can be registered before
+Cordova's `deviceready` event. Accessing the exported
+`cordova.plugins.ThemeDetection.THEME_CHANGE_EVENT` constant should wait until
+`deviceready`.
+
+```js
+document.addEventListener(
+  "cordova-plugin-theme-detection:change",
+  function(event) {
+    console.log(event.detail.theme);
+    // "dark" or "light"
+
+    console.log(event.detail.isDarkModeEnabled);
+    // boolean: true or false
+  }
+);
+
+document.addEventListener("deviceready", function() {
+  // The change event only reports changes. Query the initial value separately.
+  cordova.plugins.ThemeDetection.isDarkModeEnabled(
+    function(result) {
+      console.log("Initial dark mode value:", result.value);
+    },
+    function(error) {
+      console.error(error);
+    }
+  );
+});
+```
+
+The event detail has the following shape:
+
+```js
+{
+  theme: "dark" | "light",
+  isDarkModeEnabled: boolean
+}
+```
+
+Theme changes are delivered while the Cordova application process and WebView
+are alive. A change that occurs while the application is in the background is
+also checked when the application resumes. If the application process was
+terminated, use `isDarkModeEnabled()` after the next `deviceready` event to get
+the current value.
+
 ### Responses
 
 **ThemeDetectionResponse**:
@@ -126,6 +181,7 @@ Please remove this property from `config.xml`.
 
 ## Changelog
 
+- 1.3.1: Add Android theme change event
 - 1.3.0: Add browser platform support
 - 1.2.1: Updated README
 - 1.2.0: Bugfix for Android 10
