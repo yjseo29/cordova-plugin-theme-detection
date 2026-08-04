@@ -154,6 +154,29 @@ also checked when the application resumes. If the application process was
 terminated, use `isDarkModeEnabled()` after the next `deviceready` event to get
 the current value.
 
+### Window background sync (Android)
+
+Android resolves `android:windowBackground` once, when the window is created,
+and Cordova's manifest template lists `uiMode` in `android:configChanges`. A
+system dark/light switch therefore does not recreate the activity, and the
+window keeps the background color it resolved at launch: an application started
+in light mode still shows the light background after the device switches to
+dark. That color is visible wherever the WebView does not cover the window —
+most noticeably in edge-to-edge applications while the soft keyboard shrinks
+the WebView.
+
+The plugin re-resolves the theme's `windowBackground` for the new configuration
+and re-applies it, so themes providing `values-night` variants keep working
+without recreating the activity (which would reload the whole web application).
+This runs automatically and does not depend on the theme change event above.
+
+Set the following preference in `config.xml` to opt out, for example when the
+application manages the window background itself at runtime:
+
+```xml
+<preference name="ThemeDetectionSyncWindowBackground" value="false" />
+```
+
 ### Responses
 
 **ThemeDetectionResponse**:
@@ -181,6 +204,7 @@ Please remove this property from `config.xml`.
 
 ## Changelog
 
+- 1.4.0: Keep the Android window background in sync with the system theme
 - 1.3.1: Add Android theme change event
 - 1.3.0: Add browser platform support
 - 1.2.1: Updated README
