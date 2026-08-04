@@ -4,7 +4,9 @@ import android.app.Activity;
 import android.content.res.Configuration;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.content.Context;
 import android.os.Build;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Window;
 import org.apache.cordova.CallbackContext;
@@ -31,6 +33,11 @@ public class ThemeDetection extends CordovaPlugin {
   // Opt-out for syncWindowBackground(); on by default. Set to false in config.xml
   // when an app manages the window background itself at runtime.
   private static final String PREF_SYNC_WINDOW_BACKGROUND = "ThemeDetectionSyncWindowBackground";
+
+  private static final String TAG = "ThemeDetection";
+
+  // Night mode the window background was last resolved for.
+  private int lastSyncedNightMode = Configuration.UI_MODE_NIGHT_UNDEFINED;
 
   @Override
   public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
@@ -104,7 +111,7 @@ public class ThemeDetection extends CordovaPlugin {
   @Override
   public void onConfigurationChanged(Configuration newConfig) {
     super.onConfigurationChanged(newConfig);
-    syncWindowBackground();
+    syncWindowBackground(newConfig);
     notifyIfThemeChanged(newConfig);
   }
 
@@ -112,7 +119,9 @@ public class ThemeDetection extends CordovaPlugin {
   public void onResume(boolean multitasking) {
     super.onResume(multitasking);
     // Safety net: the theme can also change while the app sits in the background.
-    syncWindowBackground();
+    syncWindowBackground(
+        this.cordova.getActivity().getResources().getConfiguration()
+    );
     notifyIfThemeChanged(
         this.cordova.getActivity().getResources().getConfiguration()
     );
@@ -139,8 +148,13 @@ public class ThemeDetection extends CordovaPlugin {
    * callbacks run after cordova's own onConfigurationChanged work, so the value
    * would already be correct by the time this runs and the check below skips it.
    */
-  private void syncWindowBackground() {
-    if (!preferences.getBoolean(PREF_SYNC_WINDOW_BACKGROUND, true)) {
+  private void syncWindowBackground(Configuration configuration) {
+    if (preferences != null && !preferences.getBoolean(PREF_SYNC_WINDOW_BACKGROUND, true)) {
+      return;
+    }
+
+    int nightMode = getNightMode(configuration);
+    if (nightMode == lastSyncedNightMode) {
       return;
     }
 
@@ -152,40 +166,71 @@ public class ThemeDetection extends CordovaPlugin {
       }
 
       TypedValue value = new TypedValue();
-      // resolveRefs = false keeps the resource id, so the value is looked up again
-      // below under the *current* configuration (night qualifiers included).
-      if (!activity.getTheme().resolveAttribute(android.R.attr.windowBackground, value, false)) {
+      if (!activity.getTheme().resolveAttribute(android.R.attr.windowBackground, value, true)) {
+        Log.d(TAG, "windowBackground: theme has no windowBackground, skipping");
         return;
       }
 
+      // resourceId is the resource the attribute points at (0 for a literal value).
+      // Keep TYPE_REFERENCE's data as a fallback: a reference left unresolved carries
+      // the id there instead.
+      int resourceId = value.resourceId;
+      if (resourceId == 0 && value.type == TypedValue.TYPE_REFERENCE) {
+        resourceId = value.data;
+      }
+
       Drawable next;
-      if (value.type >= TypedValue.TYPE_FIRST_COLOR_INT && value.type <= TypedValue.TYPE_LAST_COLOR_INT) {
+      if (resourceId != 0) {
+        // Resolve through a context built for the supplied configuration rather than
+        // through the activity's own Resources. The activity handles uiMode changes
+        // itself (cordova's manifest template), so its Resources may still carry the
+        // previous night mode at this point and would hand back the stale color.
+        Context configContext = activity.createConfigurationContext(configuration);
+        next = configContext.getDrawable(resourceId);
+      } else if (value.type >= TypedValue.TYPE_FIRST_COLOR_INT && value.type <= TypedValue.TYPE_LAST_COLOR_INT) {
         // Literal color in the theme: nothing configuration dependent to re-resolve.
         next = new ColorDrawable(value.data);
-      } else if (value.resourceId != 0) {
-        // Color or drawable resource: getDrawable() re-resolves it for the current
-        // configuration, which is the whole point of this method.
-        next = activity.getResources().getDrawable(value.resourceId, activity.getTheme());
       } else {
+        Log.d(TAG, "windowBackground: unsupported value type=" + value.type + ", skipping");
         return;
       }
 
       if (next == null) {
+        Log.d(TAG, "windowBackground: resource 0x" + Integer.toHexString(resourceId) + " resolved to null, skipping");
         return;
       }
 
-      // Skip when nothing would change. Keeps this idempotent (onResume runs often)
-      // and avoids fighting whoever set the background once cordova handles it.
+      // Skip when nothing would change: keeps this idempotent, and makes it inert if
+      // cordova-android starts handling the window background itself (plugin
+      // callbacks run after cordova's own onConfigurationChanged work).
       Drawable current = window.getDecorView().getBackground();
-      if (current instanceof ColorDrawable && next instanceof ColorDrawable
-          && ((ColorDrawable) current).getColor() == ((ColorDrawable) next).getColor()) {
+      boolean unchanged = current instanceof ColorDrawable && next instanceof ColorDrawable
+          && ((ColorDrawable) current).getColor() == ((ColorDrawable) next).getColor();
+
+      Log.d(TAG, "windowBackground: night=" + nightMode
+          + " current=" + describeDrawable(current)
+          + " next=" + describeDrawable(next)
+          + (unchanged ? " -> unchanged" : " -> applying"));
+
+      lastSyncedNightMode = nightMode;
+      if (unchanged) {
         return;
       }
 
       window.setBackgroundDrawable(next);
     } catch (Exception e) {
-      // Themes without a resolvable windowBackground: leave the window untouched.
+      Log.w(TAG, "windowBackground sync failed", e);
     }
+  }
+
+  private String describeDrawable(Drawable drawable) {
+    if (drawable == null) {
+      return "null";
+    }
+    if (drawable instanceof ColorDrawable) {
+      return String.format("#%08X", ((ColorDrawable) drawable).getColor());
+    }
+    return drawable.getClass().getSimpleName();
   }
 
   @Override
